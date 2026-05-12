@@ -273,6 +273,6 @@ Unknown form id returns **404** with code `fluent_forms_extended_api_form_not_fo
 
 ## Licence
 
-GPL-2.0-or-later
+MIT
 
 ![Cursor](https://img.shields.io/badge/Cursor-%23000000?style=for-the-badge&logo=Cursor&logoColor=white)

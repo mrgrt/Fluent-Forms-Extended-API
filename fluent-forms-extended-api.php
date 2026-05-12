@@ -6,9 +6,9 @@
  * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
- * Author:            Your Name
- * License:           GPL-2.0-or-later
- * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Author:            Grahame Thomson
+ * License:           MIT
+ * License URI:       https://opensource.org/licenses/MIT
  * Text Domain:       fluent-forms-extended-api
  *
  * @package FluentFormsExtendedApi
