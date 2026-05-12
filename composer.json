@@ -1,0 +1,14 @@
+{
+  "name": "fluent-forms-extended-api/plugin",
+  "description": "REST API extension for Fluent Forms form definitions",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=7.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "FluentFormsExtendedApi\\": "src/"
+    }
+  }
+}
