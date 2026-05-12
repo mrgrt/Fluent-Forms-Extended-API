@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:       Fluent Forms Extended API
- * Plugin URI:        https://github.com/your-org/fluent-forms-extended-api
+ * Plugin URI:        https://github.com/mrgrt/Fluent-Forms-Extended-API
  * Description:       Exposes a REST API for Fluent Forms definitions and native-pipeline form submissions for headless and external integrations.
  * Version:           1.0.0
  * Requires at least: 6.0
