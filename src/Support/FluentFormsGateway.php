@@ -13,7 +13,11 @@ namespace FluentFormsExtendedApi\Support;
 final class FluentFormsGateway
 {
     /**
-     * @return mixed Fluent Forms `\FluentForm\App\Api\Form` instance (intentionally untyped so this file autoloads when Fluent Forms is inactive).
+     * Documented public PHP API: returns Fluent Forms' forms module. Intentionally
+     * untyped (`mixed`) so this file autoloads even when Fluent Forms is inactive
+     * and so we never reference an internal namespace.
+     *
+     * @return mixed
      */
     public function formsModule()
     {
@@ -77,11 +81,11 @@ final class FluentFormsGateway
     }
 
     /**
-     * FormProperties wrapper for a loaded form model (documented fluent chain).
+     * Documented public chain: returns the FormProperties wrapper for a loaded form.
      *
      * @param object $form Form object from {@see self::findForm()}.
      *
-     * @return mixed `\FluentForm\App\Api\FormProperties`
+     * @return mixed Untyped to avoid referencing any internal namespace.
      */
     public function formProperties($form)
     {

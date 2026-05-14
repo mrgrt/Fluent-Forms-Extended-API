@@ -14,7 +14,9 @@ namespace FluentFormsExtendedApi\Support;
 final class ValidationErrorNormalizer
 {
     /**
-     * @param array<string, mixed>   $rawErrors         Value from {@see \FluentForm\Framework\Validator\ValidationException::errors()} (or equivalent shape).
+     * @param array<string, mixed>   $rawErrors         Field-keyed error map as emitted by Fluent Forms' submit
+     *                                                  endpoint on validation failure (the body of a non-2xx JSON
+     *                                                  response — no internal exception types are referenced).
      * @param list<array<string, mixed>> $normalizedFields Output of the shared field schema transformer.
      *
      * @return array{success: false, errors: list<array{field: string, label: string, message: string, type: string}>}

@@ -12,7 +12,11 @@ final class SubmissionResponseNormalizer
     /**
      * Normalise Fluent Forms' successful handler array to our public JSON shape.
      *
-     * @param array<string, mixed> $handlerResponse Return value of {@see \FluentForm\App\Services\Form\SubmissionHandlerService::handleSubmission()}.
+     * Consumes the array that Fluent Forms' submit endpoint emits inside the
+     * `data` key of its `wp_send_json_success()` envelope (no internal class
+     * types are referenced).
+     *
+     * @param array<string, mixed> $handlerResponse Decoded `data` payload from the public AJAX submit response.
      *
      * @return array{success: true, message: string}
      */

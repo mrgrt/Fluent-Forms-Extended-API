@@ -15,9 +15,9 @@ This plugin treats Fluent Forms as the **source of truth** and does **not** quer
 - [`->inputs(...)`](https://fluentforms.com/docs/fluent-form-php-api/) — parser-backed metadata (rules, options, labels) merged onto each field  
 - [`->fields()`](https://fluentforms.com/docs/fluent-form-php-api/) — decoded editor tree for **structure** (containers, composite parents); combined with `inputs()` in our transformer to emit a **flat** normalised `fields` array (dotted logical ids, `group`, `component`, optional `submit_key`). Only the `submitButton` segment is used for `submit_button` in responses.  
 
-**Submissions** are delegated to Fluent Forms’ `SubmissionHandlerService::handleSubmission()` (the same pipeline used by Fluent’s own submission controller). This plugin does not insert rows or run validators manually.
+**Submissions** are sent to Fluent Forms via its publicly-exposed AJAX action `fluentform_submit` (the same endpoint Fluent Forms' own JavaScript posts to). The call is made server-side with the WordPress HTTP API (`wp_remote_post()`) and authenticated cookies are forwarded so submissions stay attributed to the originating user. This plugin **does not** reference any class under `FluentForm\App\` or `FluentForm\Framework\`, instantiate any Fluent Forms internal service, catch internal exception types, or query the database — Fluent Forms is treated strictly as a black box accessed through its public surface.
 
-Internal Fluent Forms HTTP routes are not proxied. The public REST response shape is **owned by this plugin** so it can stay stable if Fluent Forms adjusts internals.
+The public REST response shape is **owned by this plugin** so it stays stable if Fluent Forms changes internals.
 
 ## Requirements
 
@@ -44,12 +44,51 @@ Endpoints currently use `permission_callback` that always returns `true` (public
 | `GET` | `/fluent-forms-extended/v1/forms` | List all forms (`id`, `title`, `status`) |
 | `GET` | `/fluent-forms-extended/v1/forms/{id}` | Single form: `id`, `title`, `status`, normalised `fields`, optional `submit_button` |
 | `POST` | `/fluent-forms-extended/v1/forms/{id}/submit` | Submit a form (JSON body; keys = Fluent input names, or dotted logical `id` values from GET — see below) |
+| `GET` | `/fluent-forms-extended/v1/entries` | Paginated submissions across **all** forms |
+| `GET` | `/fluent-forms-extended/v1/entries/{entry_id}` | Single submission by id (404 when the entry does not exist) |
+| `GET` | `/fluent-forms-extended/v1/forms/{form_id}/entries` | Paginated submissions for a single form (404 when the form does not exist) |
 
 Full paths:
 
 - `GET /wp-json/fluent-forms-extended/v1/forms`
 - `GET /wp-json/fluent-forms-extended/v1/forms/12`
 - `POST /wp-json/fluent-forms-extended/v1/forms/12/submit`
+- `GET /wp-json/fluent-forms-extended/v1/entries`
+- `GET /wp-json/fluent-forms-extended/v1/entries/102`
+- `GET /wp-json/fluent-forms-extended/v1/forms/12/entries`
+
+### Listing entries (`GET /entries` and `GET /forms/{form_id}/entries`)
+
+Both routes share the same query string contract and response envelope. They read through the documented Fluent Forms public APIs — `fluentFormApi('submissions')->get()` for the cross-form list and `fluentFormApi('forms')->entryInstance($form)->entries()` for the per-form list — so no Fluent Forms internals are touched.
+
+**Query parameters**
+
+| Param | Type | Default | Notes |
+|-------|------|---------|-------|
+| `page` | int | `1` | 1-indexed; values < 1 are clamped to `1`. |
+| `per_page` | int | `20` | Min `1`, max `100`. |
+| `sort_by` | string | `id` | One of `id`, `created_at`. Both map to the supported upstream sort (submission id, which is monotonic with `created_at`). Anything else → **HTTP 400**. |
+| `sort_order` | string | `DESC` | `ASC` or `DESC` (case-insensitive). Anything else → **HTTP 400**. |
+
+**Permission callback (default)**
+
+Entries contain PII, so entry routes are *not* public. The default `permission_callback` allows callers with the documented Fluent Forms `fluentform_entries_viewer` capability or `manage_options`. Integrators can plug in custom auth via:
+
+- `fluent_forms_extended_api_can_view_entries` — `(bool $allow, WP_REST_Request $request)` — return your own decision (e.g. JWT/application-password gate).
+
+**404 contract**
+
+`GET /forms/{form_id}/entries` validates the form exists *before* querying entries by calling `fluentFormApi('forms')->find($id)`. Missing forms return `HTTP 404`:
+
+```json
+{ "success": false, "message": "No form exists for the requested id." }
+```
+
+### Fetching a single entry (`GET /entries/{entry_id}`)
+
+Returns one submission by its primary id (the same id surfaced as `entry_id` in list responses). Internally this goes through the documented `fluentFormApi('submissions')->find()` public method, wrapped defensively because the upstream method does not null-guard on missing ids. Unknown ids → `HTTP 404`.
+
+The single-entry body adds `updated_at` and `payment_status` on top of the list-entry shape. `payment_status` is `null` for non-payment forms so clients can distinguish "no payment context" from values like `"paid"` / `"pending"` / `"failed"`.
 
 ### Submitting a form (`POST /forms/{id}/submit`)
 
@@ -93,6 +132,21 @@ curl -sS "https://example.com/wp-json/fluent-forms-extended/v1/forms/12"
 curl -sS -X POST "https://example.com/wp-json/fluent-forms-extended/v1/forms/12/submit" \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","message":"Hello world"}'
+```
+
+```bash
+curl -sS -u "admin:APP-PASSWORD" \
+  "https://example.com/wp-json/fluent-forms-extended/v1/entries?page=1&per_page=20&sort_order=DESC"
+```
+
+```bash
+curl -sS -u "admin:APP-PASSWORD" \
+  "https://example.com/wp-json/fluent-forms-extended/v1/entries/102"
+```
+
+```bash
+curl -sS -u "admin:APP-PASSWORD" \
+  "https://example.com/wp-json/fluent-forms-extended/v1/forms/12/entries?page=2&per_page=50&sort_by=created_at&sort_order=ASC"
 ```
 
 ## Example responses
@@ -230,6 +284,102 @@ The `message` string is taken from Fluent’s confirmation settings when availab
 
 If Fluent reports a key that is not in the form schema (e.g. captcha or global add-on fields), `label` may be empty and `type` will be `unknown`. You can refine those via the `fluent_forms_extended_api_validation_field_meta` filter. Non-standard key spellings can be adjusted with `fluent_forms_extended_api_validation_field_aliases`. Form-level messages use the pseudo-field `_form`.
 
+### `GET /entries` (and `GET /forms/{form_id}/entries`)
+
+```json
+{
+  "total": 47,
+  "current_page": 1,
+  "per_page": 20,
+  "total_pages": 3,
+  "data": [
+    {
+      "entry_id": 102,
+      "form_id": 12,
+      "status": "read",
+      "created_at": "2026-05-13 09:14:22",
+      "user_id": 5,
+      "user_ip": "203.0.113.42",
+      "browser": "Chrome",
+      "device": "Desktop",
+      "submission": {
+        "names": {
+          "first_name": "Ada",
+          "last_name": "Lovelace"
+        },
+        "email": "ada@example.com",
+        "message": "Hello world"
+      }
+    },
+    {
+      "entry_id": 101,
+      "form_id": 15,
+      "status": "unread",
+      "created_at": "2026-05-12 22:08:11",
+      "user_id": null,
+      "user_ip": "198.51.100.7",
+      "browser": "Safari",
+      "device": "iPhone",
+      "submission": {
+        "email": "guest@example.com"
+      }
+    }
+  ]
+}
+```
+
+`submission` is the field-name → value map exactly as Fluent Forms stores it (JSON-decoded by the public API). For composite Fluent fields (name, address, repeaters, …) it is a nested object, matching the `submit_key`/`group` structure from `GET /forms/{id}`. `user_id` is `null` for guest submissions.
+
+### `GET /entries/{entry_id}`
+
+```json
+{
+  "entry_id": 102,
+  "form_id": 12,
+  "status": "read",
+  "created_at": "2026-05-13 09:14:22",
+  "updated_at": "2026-05-13 10:01:18",
+  "user_id": 5,
+  "user_ip": "203.0.113.42",
+  "browser": "Chrome",
+  "device": "Desktop",
+  "payment_status": "paid",
+  "submission": {
+    "names": { "first_name": "Ada", "last_name": "Lovelace" },
+    "email": "ada@example.com",
+    "message": "Hello world"
+  }
+}
+```
+
+### `GET /entries/{entry_id}` — unknown entry (HTTP 404)
+
+```json
+{
+  "success": false,
+  "message": "No entry exists for the requested id."
+}
+```
+
+### `GET /forms/{form_id}/entries` — unknown form (HTTP 404)
+
+```json
+{
+  "success": false,
+  "message": "No form exists for the requested id."
+}
+```
+
+### `GET /entries?sort_by=foo` — invalid query (HTTP 400)
+
+```json
+{
+  "success": false,
+  "message": "Invalid sort_by value.",
+  "allowed_sort_by": ["id", "created_at"]
+}
+```
+
 ### `POST /forms/12/submit` — server / dependency error
 
 ```json
@@ -261,12 +411,16 @@ Unknown form id returns **404** with code `fluent_forms_extended_api_form_not_fo
 |------|------|
 | `fluent-forms-extended-api.php` | Plugin header, constants, PSR-4 autoload, bootstraps `Plugin` |
 | `src/Plugin.php` | Wires services and registers REST controller on `rest_api_init` |
-| `src/Rest/FormsController.php` | `register_rest_route` + `WP_REST_Response` / `WP_Error` |
+| `src/Rest/FormsController.php` | `register_rest_route` + `WP_REST_Response` / `WP_Error` (forms + submit) |
+| `src/Rest/EntriesController.php` | `register_rest_route` + `WP_REST_Response` for entry routes; permission callback for PII gating |
 | `src/Services/FormService.php` | Orchestrates `fluentFormApi('forms')` and normalisation |
-| `src/Services/FormSubmissionService.php` | Submissions: payload prep + `SubmissionHandlerService` delegation |
+| `src/Services/FormSubmissionService.php` | Submissions: payload prep + result mapping (HTTP-status based; zero internal class refs) |
+| `src/Services/EntryService.php` | Validates query/form/entry existence, paginates via the public entry APIs |
 | `src/Support/FluentFormsGateway.php` | Thin wrapper: `forms()`, `find()`, `form()` |
-| `src/Support/FluentSubmissionPipeline.php` | Wraps `SubmissionHandlerService::handleSubmission()` |
+| `src/Support/FluentEntriesGateway.php` | Thin wrapper: `submissions()->get()`, `submissions()->find()`, `forms()->entryInstance($form)->entries()` |
+| `src/Support/FluentSubmissionClient.php` | Loopback `wp_remote_post()` to Fluent Forms' public `fluentform_submit` AJAX action |
 | `src/Support/SubmissionResponseNormalizer.php` | Stable JSON for success and generic server errors |
+| `src/Support/EntryResponseNormalizer.php` | Maps Submission row objects to the public entry contract |
 | `src/Support/ValidationErrorNormalizer.php` | Maps Fluent validation errors + normalised field schema to `errors[]` |
 | `src/Support/FieldSchemaTransformer.php` | Flat canonical field schema: `fields()` + `inputs()` merge, composite flattening, `submitButton` |
 | `src/Support/FluentFormsDependency.php` | `function_exists('fluentFormApi')` guard |

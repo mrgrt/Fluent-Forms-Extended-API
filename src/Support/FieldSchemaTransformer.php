@@ -7,10 +7,13 @@ namespace FluentFormsExtendedApi\Support;
 /**
  * Turns Fluent Forms API shapes into a stable, headless-friendly field schema.
  *
- * Uses the documented {@see \FluentForm\App\Api\FormProperties::fields()} tree for structure (containers, composites)
- * and {@see \FluentForm\App\Api\FormProperties::inputs()} for parser-backed enrichment (rules, options, labels).
- * Composite blocks (name, address, repeaters, etc.) are **flattened** into a single top-level `fields` list with
- * dotted logical `id`, optional `submit_key`, `group`, and `component` hints — raw editor nodes are never returned.
+ * Consumes only the documented public PHP API surface exposed by
+ * `fluentFormApi('forms')->form($form)`: the `fields()` editor tree for structure
+ * (containers, composites) and the `inputs()` parser-backed metadata (rules,
+ * options, labels). Composite blocks (name, address, repeaters, etc.) are
+ * **flattened** into a single top-level `fields` list with dotted logical `id`,
+ * optional `submit_key`, `group`, and `component` hints — raw editor nodes are
+ * never returned and no Fluent Forms class names are referenced.
  */
 final class FieldSchemaTransformer
 {
@@ -250,7 +253,10 @@ final class FieldSchemaTransformer
     }
 
     /**
-     * Mirrors Fluent's parser behaviour for name/address children ({@see \FluentForm\App\Services\Parser\Extractor::handleCustomField()}).
+     * Mirror Fluent's parser behaviour for name/address children — a child subfield is
+     * "active" when its editor settings don't explicitly disable it. The rule is derived
+     * from the documented `fields()` editor payload only; no internal parser classes are
+     * referenced.
      *
      * @param array<string, mixed> $child
      */
